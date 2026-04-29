@@ -1,0 +1,38 @@
+# HTRflow demo pipeline
+# This pipeline works well on pages with running text
+
+steps:
+
+- step: Segmentation
+  settings:
+    model: DocSAMModel
+    model_settings:
+      checkpoint_path: /models/docsam/last_model.pth
+      model_size: base
+      device: cuda
+      class_names: ["_background", "textregion", "textline"]
+    generation_settings:
+      batch_size: 1
+      use_polygons: true
+# Text recognition
+- step: TextRecognition
+  settings:
+    model: WordLevelTrocr
+    model_settings:
+       model: Riksarkivet/trocr-base-handwritten-hist-swe-2
+    generation_settings:
+       batch_size: 4
+       num_beams: 1
+# Order regions by reading order
+- step: ReadingOrderMarginalia
+  settings:
+    two_page: always
+# Export to Alto and Page XML
+- step: Export
+  settings:
+    dest: outputs/alto
+    format: alto
+- step: Export
+  settings:
+    dest: outputs/page
+    format: page
