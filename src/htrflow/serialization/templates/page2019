@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PcGts xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2019-07-15" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://schema.primaresearch.org/PAGE/gts/pagecontent/2019-07-15 http://schema.primaresearch.org/PAGE/gts/pagecontent/2019-07-15/pagecontent.xsd">
+    <Metadata>
+        <Creator>{{ metadata.get("Name") }}</Creator>
+        <Created>{{ timestamp }}</Created>
+        <LastChange>{{ timestamp }}</LastChange>
+    </Metadata>
+    <Page imageFilename="{{ document.image_name }}" imageWidth="{{ document.image.width }}" imageHeight="{{ document.image.height }}">
+        {%- if document.regions %}
+        <ReadingOrder>
+            <OrderedGroup id="ro">
+            {%- for region in document.regions %}
+            {%- set region_index = loop.index0 %}
+                {%- if region.regions %}
+                <OrderedGroupIndexed id="ro_region{{ region_index }}" index="{{ region_index }}">
+                {%- for line in region.regions %}
+                    <RegionRefIndexed regionRef="region{{ region_index }}_line{{ loop.index0 }}" index="{{ loop.index0 }}"/>
+                {%- endfor %}
+                </OrderedGroupIndexed>
+                {%- endif %}
+            {%- endfor %}
+            </OrderedGroup>
+        </ReadingOrder>
+        {%- endif %}
+    {%- for region in document.regions %}
+    {%- set region_index = loop.index0 %}
+    {%- set region_x = region.polygon.xmin %}
+    {%- set region_y = region.polygon.ymin %}
+        <TextRegion id="region{{ region_index }}">
+            <Coords points="{{ region.polygon }}" {% if region.annotations.get('segmentation_confidence') %}conf="{{ region.annotations.get('segmentation_confidence') }}"{% endif %}/>
+        {%- for line in region.regions %}
+        {%- set line_index = loop.index0 %}
+        {%- set line_x = region_x + line.polygon.xmin %}
+        {%- set line_y = region_y + line.polygon.ymin %}
+            <TextLine id="region{{ region_index }}_line{{ line_index }}">
+                <Coords points="{{ line.polygon.move((region_x, region_y)) }}"  {% if line.annotations.get('segmentation_confidence') %}conf="{{ line.annotations.get('segmentation_confidence') }}"{% endif %}/>
+            {%- if line.regions %}
+                {%- for word in line.regions %}
+                {%- if word.transcription %}
+                <Word id="region{{ region_index }}_line{{ line_index }}_word{{ loop.index0 }}">
+                    <Coords points="{{ word.polygon.move((line_x, line_y)) }}" />
+                    {%- for transcription in word.transcription %}
+                    {% if transcription.confidence %}<TextEquiv conf="{{ transcription.confidence }}">{% else %}<TextEquiv>{% endif %}
+                        <Unicode>{{ transcription.text | e }}</Unicode>
+                    </TextEquiv>
+                    {%- endfor %}
+                </Word>
+                {%- endif %}
+                {%- endfor %}
+            {%- else %}
+            {%- for transcription in line.transcription %}
+                {% if transcription.confidence %}<TextEquiv conf="{{ transcription.confidence }}" index="{{ loop.index0 }}">{% else %}<TextEquiv>{% endif %}
+                    <Unicode>{{ transcription.text | e }}</Unicode>
+                </TextEquiv>
+            {%- endfor %}
+            {%-endif %}
+            </TextLine>
+        {%- endfor %}
+        </TextRegion>
+    {%- endfor %}
+    </Page>
+</PcGts>

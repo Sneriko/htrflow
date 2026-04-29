@@ -1,0 +1,48 @@
+# HTRflow demo pipeline
+# This pipeline works well on pages with running text
+
+steps:
+
+# Region segmentation
+- step: Segmentation
+  settings:
+    model: yolo
+    model_settings:
+       model: Riksarkivet/yolov9-regions-1
+    generation_settings:
+       batch_size: 2
+# Line segementation
+- step: Segmentation
+  settings:
+    model: yolo
+    model_settings:
+       model: Riksarkivet/yolov9-lines-within-regions-1
+    generation_settings:
+        batch_size: 2
+# Text recognition
+- step: TextRecognition
+  settings:
+    model: WordLevelTrocr
+    model_settings:
+       model: /mnt/work/models/swedish-lion-2026/tokenlevel-large-0e405be/epoch=6-step=116662-validation_loss=0.0956-cer=0.0393
+    generation_settings:
+       batch_size: 4
+       num_beams: 1
+       max_length: 160
+# Order regions by reading order
+- step: ReadingOrderMarginalia
+  settings:
+    two_page: always
+# Export to Alto and Page XML
+- step: Export
+  settings:
+    dest: /home/dgxuser/erik/projects/vlm_eval/outputs/testset_txt
+    format: txt
+- step: Export
+  settings:
+    dest: /home/dgxuser/erik/projects/vlm_eval/outputs/testset_page
+    format: page
+- step: Export
+  settings:
+    dest: /home/dgxuser/erik/projects/vlm_eval/outputs/testset_alto
+    format: alto

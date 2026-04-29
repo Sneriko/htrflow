@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  htrflow:
+    image: docker/htrflow.dockerfile
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "htrflow pipeline pipeline/demo.yaml input --logfile logs/htrflow/htrflow.log",
+      ]
+
+    volumes:
+      - ./examples/images/pages:/app/input 
+      - ./output-volume:/app/outputs
+      - ./logs-volume:/app/logs
+      - ./examples/pipelines:/app/pipeline
+      - ./.cache:/app/models

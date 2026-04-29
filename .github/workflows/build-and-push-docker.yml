@@ -1,0 +1,53 @@
+name: Build and Push Images
+
+on:
+  # release:
+  #   types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Get the latest Git tag and commit hash
+        run: |
+          # Fetch the latest tag
+          latest_tag=$(git describe --tags $(git rev-list --tags --max-count=1))
+          echo "Latest tag: $latest_tag"
+          echo "latest_tag=$latest_tag" >> $GITHUB_ENV
+          
+          # Get the first 7 characters of the commit hash
+          short_sha=$(git rev-parse --short HEAD)
+          echo "Commit SHA (short): $short_sha"
+          echo "short_sha=$short_sha" >> $GITHUB_ENV
+
+      - name: Print DockerHub username
+        run: echo "DockerHub username is ${{ secrets.DOCKERHUB_USERNAME }}"
+
+      # Build and push the htrflow.dockerfile image with both 'latest' and Git tag + commit hash
+      - name: Build and push htrflow image
+        run: |
+          docker build -f docker/htrflow.dockerfile -t ${{ secrets.DOCKERHUB_USERNAME }}/htrflow:latest .
+          docker tag ${{ secrets.DOCKERHUB_USERNAME }}/htrflow:latest ${{ secrets.DOCKERHUB_USERNAME }}/htrflow:$latest_tag-$short_sha
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/htrflow:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/htrflow:$latest_tag-$short_sha
+
+      # Build and push the htrflow_openmmlab.dockerfile image with Git tag and commit hash
+      - name: Build and push htrflow_openmmlab image
+        run: |
+          docker build -f docker/htrflow_openmmlab.dockerfile -t ${{ secrets.DOCKERHUB_USERNAME }}/htrflow_openmmlab:$latest_tag-$short_sha .
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/htrflow_openmmlab:$latest_tag-$short_sha

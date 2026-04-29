@@ -1,0 +1,364 @@
+import logging
+from typing import Any
+
+import torch
+from PIL import Image
+from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+
+from htrflow.document import Region, Text
+from htrflow.models.base_model import BaseModel
+from htrflow.models.download import get_model_info
+from htrflow.models.huggingface.mixins import ConfidenceMixin
+from htrflow.utils.geometry import Bbox
+
+
+logger = logging.getLogger(__name__)
+
+
+class TrOCR(BaseModel, ConfidenceMixin):
+    """
+    HTRflow adapter of the tranformer-based OCR model TrOCR.
+
+    Uses huggingface's implementation of TrOCR. For further
+    information, see
+    https://huggingface.co/docs/transformers/model_doc/trocr.
+
+    Example usage with the `TextRecognition` step:
+    ```yaml
+    - step: TextRecognition
+      settings:
+        model: TrOCR
+        model_settings:
+          model: Riksarkivet/trocr-base-handwritten-hist-swe-2
+          device: cpu
+          model_kwargs:
+            revision: 6ecbb5d643430385e1557001ae78682936f8747f
+        generation_settings:
+          batch_size: 8
+          num_beams: 1
+    ```
+    """
+
+    def __init__(
+        self,
+        model: str,
+        processor: str | None = None,
+        model_kwargs: dict[str, Any] | None = None,
+        processor_kwargs: dict[str, Any] | None = None,
+        **kwargs,
+    ):
+        """
+        Arguments:
+            model: Path or name of pretrained VisisonEncoderDeocderModel.
+            processor: Optional path or name of pretrained TrOCRProcessor.
+                If not given, the model path or name is used.
+            model_kwargs: Model initialization kwargs which are forwarded to
+                VisionEncoderDecoderModel.from_pretrained.
+            processor_kwargs: Processor initialization kwargs which are
+                forwarded to TrOCRProcessor.from_pretrained.
+            kwargs: Additional kwargs which are forwarded to BaseModel's
+                __init__.
+        """
+        super().__init__(**kwargs)
+
+        # Initialize model
+        model_kwargs = model_kwargs or {}
+        self.decoding = model_kwargs.pop("decoding", None)
+        self.model = VisionEncoderDecoderModel.from_pretrained(model, **model_kwargs)
+        self.model.to(self.device)
+
+        # Workaround for transformers' TrOCRSinusoidalPositionalEmbedding: its
+        # get_embedding() always creates weights on CPU, and the checkpoint stores
+        # them as a meta tensor (no actual data). Both issues cause a device mismatch
+        # at inference time: position_ids are on CUDA but self.weights is on CPU/meta.
+        # Fix: recompute the sinusoidal weights from scratch and place them on the
+        # correct device. get_embedding() is pure math so no checkpoint data is needed.
+        if hasattr(self.model.decoder, "model") and hasattr(self.model.decoder.model, "decoder"):
+            embed_pos = getattr(self.model.decoder.model.decoder, "embed_positions", None)
+            if embed_pos is not None and hasattr(embed_pos, "weights"):
+                num_pos = embed_pos.weights.shape[0] if not embed_pos.weights.is_meta else 2048
+                embed_pos.weights = embed_pos.get_embedding(
+                    num_pos, embed_pos.embedding_dim, embed_pos.padding_idx
+                ).to(self.device)
+
+        logger.info("Initialized TrOCR model from %s on device %s.", model, self.model.device)
+
+        # Initialize processor
+        processor = processor or model
+        processor_kwargs = processor_kwargs or {}
+        self.processor = TrOCRProcessor.from_pretrained(processor, **processor_kwargs)
+        logger.info("Initialized TrOCR processor from %s.", processor)
+
+        self.metadata.update(
+            {
+                "model": model,
+                "model_version": get_model_info(model, model_kwargs.get("revision", None)),
+                "processor": processor,
+                "processor_version": get_model_info(processor, processor_kwargs.get("revision", None)),
+            }
+        )
+
+        # Map `compute_transition_scores` method from decoder to model
+        self.compute_transition_scores = self.model.decoder.compute_transition_scores
+
+    def _predict(self, images: list[Image], **generation_kwargs) -> list[Text]:
+        """TrOCR-specific prediction method.
+
+        This method is used by `predict()` and should typically not be
+        called directly. However, `predict()` forwards additional kwargs
+        to this method.
+
+        Arguments:
+            images: Input images.
+            **generation_kwargs: Optional keyword arguments that are
+                forwarded to the model's .generate() method.
+        """
+
+        # Prepare generation keyword arguments: Generally, all kwargs are
+        # forwarded to the model's .generate method, but some need to be
+        # explicitly set (and possibly overridden) to ensure that we get the
+        # output format we want.
+        generation_kwargs["num_return_sequences"] = generation_kwargs.get("num_beams", 1)
+        generation_kwargs["output_scores"] = True
+        generation_kwargs["return_dict_in_generate"] = True
+
+        # Do inference
+        with torch.no_grad():
+            model_inputs = self.processor(images, return_tensors="pt").pixel_values
+            model_outputs = self.model.generate(model_inputs.to(self.model.device), **generation_kwargs)
+
+            texts = self.processor.batch_decode(model_outputs.sequences, skip_special_tokens=True)
+            scores = self.compute_sequence_confidence_score(model_outputs)
+
+        # Assemble and return a list of Result objects from the prediction outputs.
+        # `texts` and `scores` are flattened lists so we need to iterate over them in steps.
+        # This is done to ensure that the list of results correspond 1-to-1 with the list of images.
+        results = []
+        step = generation_kwargs["num_return_sequences"]
+
+        # Create the option to create a clean decoded text. Important for historical sources/models.
+        # For example you can add generation_kwargs['decoding'] = 'unicode-escape'
+        if self.decoding:
+            for i, text in enumerate(texts):
+                try:
+                    texts[i] = text.encode("utf-8").decode(self.decoding)
+                except UnicodeEncodeError as e:
+                    logger.warning(
+                        "Text %s could not be decoded with decoding '%s'. Error: %s", text, self.decoding, e
+                    )
+                    pass
+
+        for i in range(0, len(texts), step):
+            texts_chunk = texts[i : i + step]
+            scores_chunk = scores[i : i + step]
+            result = [Text(text=text, confidence=score) for text, score in zip(texts_chunk, scores_chunk)]
+            results.append(result)
+        return results
+
+
+class WordLevelTrOCR(TrOCR):
+    """A version of TrOCR which outputs words instead of lines.
+
+    This TrOCR wrapper uses the model's attention weights to estimate
+    word boundaries. See notebook [TODO: link] for more details. It
+    does not support beam search, but can otherwise be used as a drop-
+    in replacement of TrOCR.
+
+    Example usage with the `TextRecognition` step:
+    ```yaml
+    - step: TextRecognition
+      settings:
+        model: WordLevelTrOCR
+        model_settings:
+          model: Riksarkivet/trocr-base-handwritten-hist-swe-2
+          device: cpu
+          model_kwargs:
+            revision: 6ecbb5d643430385e1557001ae78682936f8747f
+        generation_settings:
+          batch_size: 8
+    ```
+    """
+
+    def _predict(self, images: list[Image], **generation_kwargs) -> list[list[Text]]:
+        config_overrides = {
+            "output_scores": True,
+            "output_attentions": True,
+            "return_dict_in_generate": True,
+            "num_beams": 1,
+            "early_stopping": False,
+            "length_penalty": None,
+            "interpolate_pos_encoding": True,
+        }
+
+        for key, value in config_overrides.items():
+            if key in generation_kwargs and generation_kwargs[key] != value:
+                logger.warning(
+                    "WordLevelTrOCR does not support %s=%s. Using %s=%s instead.",
+                    key,
+                    generation_kwargs[key],
+                    key,
+                    value,
+                )
+
+        inputs = self.processor(images, return_tensors="pt").pixel_values
+        outputs = self.model.generate(
+            inputs.to(self.model.device),
+            **(generation_kwargs | config_overrides),
+        )
+
+        # Warn if `max_new_tokens` was given and the limit was reached
+        n_tokens = outputs.sequences.shape[1] - 1  # -1 to ignore BOS token
+        max_new_tokens = generation_kwargs.get("max_new_tokens")
+        if max_new_tokens and n_tokens >= max_new_tokens:
+            logger.warning(
+                "The longest sequence of this batch has %d tokens, which is the"
+                " maximum length, as specified by `max_new_tokens=%d`. This may"
+                " indicate that the sequence was truncated.",
+                n_tokens,
+                max_new_tokens,
+            )
+
+        # Shape `(n_output_tokens, batch_size, n_image_patches + 1)`
+        attentions = aggregate_attentions(outputs.cross_attentions)
+
+        # Calculate the shape of the attention heatmap
+        image_shape = self.processor.image_processor.size
+        patch_size = self.model.config.encoder.patch_size
+        heatmap_height = image_shape["height"] // patch_size
+        heatmap_width = image_shape["width"] // patch_size
+
+        # Create heatmaps by discarding the extra token (the first token) and reshaping the last
+        # dimension to match the original image shape.
+        heatmaps = torch.reshape(attentions[:, :, 1:], (n_tokens, -1, heatmap_height, heatmap_width))
+
+        lines = self.processor.batch_decode(
+            outputs.sequences,
+            skip_special_tokens=True,
+            cleanup_tokenization_spaces=False,
+        )
+        line_scores = self.compute_sequence_confidence_score(outputs)
+        special_tokens = {*self.processor.tokenizer.special_tokens_map.values()}
+        results = []
+
+        for i, sequence in enumerate(outputs.sequences):
+            tokens = self.processor.batch_decode(sequence)
+
+            # Deriving the words from the line (and not by joining the tokens) is a
+            # work-around in order to decode special characters correctly.
+            words = [word if len(word) else " " for word in lines[i].split(" ")]
+
+            width, height = images[i].size
+            spaces = attention_based_wordseg(tokens, heatmaps[:, i, :, :], special_tokens, width)
+            word_boundaries = list(zip(spaces, spaces[1:]))
+            line = Text(text=lines[i], confidence=line_scores[i])
+            if len(word_boundaries) != len(words) or any(start >= end_ for start, end_ in word_boundaries):
+                logger.warning("Word segmentation failed on line with detected text: %s", lines[i])
+                results.append([line])
+                continue
+
+            words = [
+                Region(Bbox(start, 0, end, height).polygon(), transcription=[Text(text=word)])
+                for (start, end), word in zip(word_boundaries, words)
+            ]
+            results.append([line] + words)
+
+        return results
+
+
+def attention_based_wordseg(
+    tokens: list[str],
+    heatmaps: torch.Tensor,
+    skip_tokens: list[str] | None = None,
+    image_width: int = 1,
+) -> list[float]:
+    """
+    Estimate word segmentation based on attention scores
+
+    Arguments:
+        tokens: list of N tokens
+        heatmaps: tensor of attention weights for each token, shape (N, img_height, img_width)
+        skip_tokens: list of tokens to not include in word attention scores
+        image_width: the width of the original image
+
+    Returns:
+        An estimated word segmenation as a list of x-coordinates of the estimated spaces,
+        including 0 and `image_width`.
+    """
+
+    tokens = tokens[1:]  # Skip the first special token
+    n_tokens = len(tokens)
+    heatmaps = heatmaps[:n_tokens]
+    if skip_tokens is None:
+        skip_tokens = []
+
+    # Sum along the columns to get attention scores along the x axis
+    xaxis_attention_scores = heatmaps.sum(axis=1)  #  (N, img_width)
+
+    # Denoise attention scores by only keeping the high attention scores
+    xaxis_attention_scores -= xaxis_attention_scores.mean(axis=0)
+    xaxis_attention_scores[xaxis_attention_scores < 0] = 0
+
+    # Token indices of spaces / word boundaries
+    spaces = [i for i, token in enumerate(tokens) if token.startswith(" ") and len(token) > 1]
+
+    # Create word attention scores by doing a weighted sum over the token attention scores
+    word_attention_scores = []
+    for word_start, word_end in zip([0] + spaces, spaces + [n_tokens]):
+        token_weights = [0 if token in skip_tokens else len(token) for token in tokens[word_start:word_end]]
+        token_weights = torch.tensor(token_weights).reshape(-1, 1).to(heatmaps.device)
+        word_attention_scores.append((token_weights * xaxis_attention_scores[word_start:word_end]).sum(axis=0))
+    word_attention_scores = torch.stack(word_attention_scores)  # (n_words, img_width)
+
+    # Normalize word attention scores such that each score is in (0, 1]
+    normalized_word_attention_scores = torch.div(word_attention_scores.T, word_attention_scores.max(axis=1).values).T
+
+    intersections = [0] + _find_intersections(normalized_word_attention_scores) + [1]
+    return [x * image_width for x in intersections]
+
+
+def aggregate_attentions(cross_attention: tuple[tuple[torch.Tensor]]) -> torch.Tensor:
+    """
+    Combine cross_attention output to one attention tensor per token
+
+    The `cross_attentions` outputted by `model.generate(output_attentions=True)`
+    is a tuple (one per each token) of tuples (one per each layer) of attention
+    matrices (tensors of shape (batch_size, num_heads, generated_length,
+    input_sequence_length)).
+
+    This function aggregates all this information into a tensor of shape
+    (num_tokens, input_sequence_length), by for each token:
+        1. Summing the attention weights of all layers
+        2. Taking the mean attention weights of all attention heads
+    This method of aggregation is a result of quite limited trial and error -
+    it seems to work fine for the task, but there are most certainly other,
+    possibly better, methods.
+
+    Args:
+        cross_attention: Cross attention weights as outputted by
+            `model.generate(output_attentions=True)`
+
+    Returns:
+        A tensor of shape (num_tokens, input_sequence_length) with aggregated
+        attention weights for each token.
+    """
+    aggregated = []
+    for token_attention in cross_attention:
+        aggregated.append(torch.stack(token_attention).mean(axis=2).sum(axis=0)[:, -1, :])
+    return torch.stack(aggregated)
+
+
+def _find_intersections(columns):
+    argmaxs = columns.argmax(axis=1)
+    result = []
+    for i, lo in enumerate(argmaxs[:-1]):
+        cols1 = columns[i]
+        cols2 = columns[i + 1]
+
+        hi = argmaxs[i + 1] + 1
+        intersections = torch.argwhere(cols1[lo:hi] <= cols2[lo:hi])
+        if len(intersections):
+            intersection = intersections[0][0]
+        else:
+            intersection = int((lo + hi) / 2)
+        result.append(int(intersection + lo))
+    return [x / columns.shape[1] for x in result]

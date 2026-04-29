@@ -1,0 +1,207 @@
+# Project information
+site_name: "HTRflow"
+site_url: https://ai-riksarkivet.github.io/htrflow/latest/
+site_author: "AI Riksarkivet"
+site_description: "AIRA has developed an open source framework to make HTR easier to productionize."
+repo_name: AI-Riksarkivet/htrflow
+repo_url: https://github.com/AI-Riksarkivet/htrflow/
+edit_uri: https://github.com/AI-Riksarkivet/htrflow/tree/main/docs
+
+use_directory_urls: false
+extra_css:
+  - stylesheets/extra.css
+
+# Page tree
+nav:
+  - HTRflow: index.md
+  - 🚀 Getting started :
+    - Installation: getting_started/installation.md
+    - Quickstart: getting_started/quick_start.md
+    - Pipeline: getting_started/pipeline.md
+    - Models: getting_started/models.md
+    - Collection: getting_started/collection.md
+    # - CLI: getting_started/cli.md
+    # - Serialization: getting_started/serialization.md
+    # - Tutorials:
+    #     - The internals: "notebooks/demo.ipynb"
+
+  - Reference:
+    - Pipeline steps: reference/pipeline-steps.md
+    - Models: reference/models.md
+    - Export formats: reference/export-formats.md
+
+  # - Integrations:
+    # - integrations/index.md
+    # - IIIF: integrations/iiif.md
+    # - Search: integrations/search.md
+    # - HaaS: integrations/haas.md
+    # - Gradio: integrations/spaces.md
+
+  # - Resources:
+    # - resources/index.md
+    # - Open Source:
+    #   - Models: resources/models.md
+    #   - Datasets: resources/datasets.md
+    # - Use Cases: resources/cases.md
+
+  - Help:
+    - FAQ: help/faq.md
+    - Contribution: help/contributing.md
+  
+
+# Configuration
+theme:
+  name: material
+  custom_dir: docs/overrides
+
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.indexes
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+    - content.code.annotate
+    - announce.dismiss
+    - toc.follow
+
+  language: en
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - scheme: slate
+      primary: black
+      accent: black
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  favicon: https://raw.githubusercontent.com/AI-Riksarkivet/htrflow/main/docs/assets/favicon.ico
+  logo: https://raw.githubusercontent.com/AI-Riksarkivet/htrflow/main/docs/assets/riks.png
+  icon:
+    logo: logo
+    repo: fontawesome/brands/github
+
+plugins:
+  - tags
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src/htrflow]
+          options:
+            merge_init_into_class: True
+            show_signature: False
+            show_symbol_type_heading: True
+            show_symbol_type_toc: True
+            show_root_toc_entry: True
+            show_root_heading: True
+            show_root_full_path: False
+            show_source: True
+            show_category_heading: False
+            show_bases: True
+            filters:
+              - "!^_"
+              - "^_predict$"
+  - mkdocs-jupyter:
+      kernel_name: python3
+      include_source: True
+  - table-reader:
+      base_path: "docs_dir"
+      data_path: "."
+      search_page_directory: True
+      allow_missing_files: False
+      select_readers:
+        - read_csv
+        - read_json
+      enabled: True
+  - git-revision-date-localized
+  - swagger-ui-tag
+  - termynal:
+      prompt_literal_start:
+        - "$"
+        - ">"
+
+extra:
+  generator: false
+  version:
+    provider: mike
+  social:
+    - icon: boostrap/hf-logo-pirate
+      link: https://huggingface.co/Riksarkivet
+      name: Hugging Face
+    - icon: fontawesome/brands/github
+      link: https://github.com/AI-Riksarkivet
+      name: Github 
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/company/national-archives-in-sweden-riksarkivet-
+      name: Linkedin 
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/htrflow/
+      name: PyPi
+    - icon: fontawesome/brands/docker
+      link: https://hub.docker.com/u/airiksarkivet
+      name: Docker Hub 
+  analytics:
+    provider: custom
+    property: matomo
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - tables
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: squidfunk
+      repo: mkdocs-material
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+  - pymdownx.snippets
+

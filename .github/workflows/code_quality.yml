@@ -1,0 +1,20 @@
+name: Code Quality
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/uv
+
+      - name: Linting check with ruff
+        run: uvx ruff check --fix
