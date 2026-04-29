@@ -37,7 +37,7 @@ from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithCr
 from transformers.modeling_utils import PreTrainedModel
 from transformers.pytorch_utils import is_torch_greater_or_equal_than_2_1
 from transformers.utils import is_accelerate_available, logging
-from transformers.utils.backbone_utils import load_backbone
+from transformers.backbone_utils import load_backbone
 from .configuration_mask2former import Mask2FormerConfig
 
 
