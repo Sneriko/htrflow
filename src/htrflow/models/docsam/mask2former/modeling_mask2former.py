@@ -3088,6 +3088,12 @@ class Mask2FormerTransformerModule(nn.Module):
                 device_map=None,
                 low_cpu_mem_usage=False,
             )
+
+        tokenizer_vocab_size = len(self.textual_tokenizer)
+        encoder_vocab_size = self.textual_encoder.get_input_embeddings().num_embeddings
+        if encoder_vocab_size < tokenizer_vocab_size:
+            self.textual_encoder.resize_token_embeddings(tokenizer_vocab_size)
+
         self.semantic_query_projection = nn.Linear(384, query_hidden_dim)
 
         # Initial instance bounding boxes and queries
