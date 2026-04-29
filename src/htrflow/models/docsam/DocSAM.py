@@ -26,9 +26,10 @@ class DocSAM(nn.Module):
     Document Segment Anything Model.
     """
     
-    def patched_docsam_init(self, model_size="base", mask2former_path=None, sentence_path=None):
-        repo_root = Path(__file__).resolve().parent.parent
-        pretrained_root = repo_root / "pretrained_model"
+    def __init__(self, model_size="base", mask2former_path=None, sentence_path=None):
+        super().__init__()
+        repo_root = Path(__file__).resolve().parents[4]
+        pretrained_root = repo_root / "models" / "pretrained_model"
 
         if model_size == "base":
             mask2former_candidates = [

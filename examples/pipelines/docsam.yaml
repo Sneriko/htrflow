@@ -7,7 +7,7 @@ steps:
   settings:
     model: DocSAMModel
     model_settings:
-      checkpoint_path: /models/docsam/last_model.pth
+      checkpoint_path: /home/dgxuser/erik/projects/htrflow/models/docsam_lines_and_regions/last_model.pth
       model_size: base
       device: cuda
       class_names: ["_background", "textregion", "textline"]

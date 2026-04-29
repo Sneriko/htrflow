@@ -3080,7 +3080,14 @@ class Mask2FormerTransformerModule(nn.Module):
         model_path = config.sentence_path
         self.textual_config = AutoConfig.from_pretrained(model_path)
         self.textual_tokenizer = AutoTokenizer.from_pretrained(model_path, config=self.textual_config)
-        self.textual_encoder = AutoModel.from_pretrained(model_path, config=self.textual_config, ignore_mismatched_sizes=True)
+        with torch.device("cpu"):
+            self.textual_encoder = AutoModel.from_pretrained(
+                model_path,
+                config=self.textual_config,
+                ignore_mismatched_sizes=True,
+                device_map=None,
+                low_cpu_mem_usage=False,
+            )
         self.semantic_query_projection = nn.Linear(384, query_hidden_dim)
 
         # Initial instance bounding boxes and queries
