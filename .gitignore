@@ -7,6 +7,7 @@ __pycache__/
 # Default HTRFLOW output directory
 outputs/
 runs/
+models/
 
 # C extensions
 *.so

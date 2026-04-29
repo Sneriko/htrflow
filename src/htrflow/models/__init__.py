@@ -3,6 +3,7 @@ from htrflow.models.huggingface.donut import Donut
 from htrflow.models.huggingface.ppdoclayoutv3 import PPDocLayoutV3
 from htrflow.models.huggingface.trocr import TrOCR, WordLevelTrOCR
 from htrflow.models.ultralytics.yolo import YOLO
+from htrflow.models.docsam.docsam import DocSAMModel
 
 
 def get_model_by_name(name: str):
@@ -21,7 +22,7 @@ def available_models():
     Returns a list of all implemented and installed model classes.
     """
 
-    models = [DiT, TrOCR, WordLevelTrOCR, YOLO, Donut, PPDocLayoutV3]
+    models = [DiT, TrOCR, WordLevelTrOCR, YOLO, Donut, PPDocLayoutV3, DocSAMModel]
 
     try:
         from htrflow.models.teklia.pylaia import PyLaia
