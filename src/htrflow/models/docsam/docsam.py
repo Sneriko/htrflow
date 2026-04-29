@@ -115,12 +115,19 @@ class DocSAMModel(BaseModel):
             }
         )
 
-    def _prepare_batch(self, image: np.ndarray) -> dict[str, Any]:
+    def _prepare_batch(self, image: np.ndarray | Image.Image) -> dict[str, Any]:
         """Build minimal batch dict expected by your DocSAM forward.
 
         Replace this with your production preprocessing pipeline so it matches training.
         """
-        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) if image.ndim == 3 else image
+        if isinstance(image, Image.Image):
+            image = np.asarray(image)
+
+        if image.ndim in (2, 3):
+            rgb = image
+        else:
+            raise ValueError(f"Unsupported image shape for DocSAM: {image.shape}")
+
         pil = Image.fromarray(rgb)
         arr = np.asarray(pil).astype(np.float32) / 255.0
         if arr.ndim == 2:
