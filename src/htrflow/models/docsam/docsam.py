@@ -20,7 +20,7 @@ from htrflow.models.base_model import BaseModel
 from htrflow.utils.geometry import Bbox, Polygon
 
 # DocSAM imports (from your training code/repo)
-from models.docsam.DocSAM import DocSAM
+from htrflow.models.docsam.DocSAM import DocSAM
 
 
 @dataclass

@@ -10,7 +10,7 @@ from torch.nn import functional as F
 torch.set_printoptions(precision=4, threshold=np.inf, edgeitems=None, linewidth=1000, profile=None, sci_mode=False)
 
 from transformers import logging
-from models.mask2former import Mask2FormerConfig, Mask2FormerForUniversalSegmentation
+from htrflow.models.docsam.mask2former import Mask2FormerConfig, Mask2FormerForUniversalSegmentation
 logging.set_verbosity_error()
  
 
