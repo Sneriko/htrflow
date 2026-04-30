@@ -3117,8 +3117,21 @@ class Mask2FormerTransformerModule(nn.Module):
             tuple[Tensor, Tensor]: Mean-pooled embeddings and CLS token embeddings.
         """
         
+        if not texts:
+            raise ValueError("Expected at least one class name for DocSAM semantic query generation.")
+
         inputs = self.textual_tokenizer(texts, padding=True, return_tensors="pt").to(device)
-        token_embeddings = self.textual_encoder(inputs["input_ids"], inputs["attention_mask"])[0]
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
+
+        embedding_table = self.textual_encoder.get_input_embeddings()
+        vocab_size = embedding_table.num_embeddings
+        max_token_id = int(input_ids.max().item())
+        if max_token_id >= vocab_size:
+            # Keep the textual encoder/tokenizer in sync even when local model files drift.
+            self.textual_encoder.resize_token_embeddings(max_token_id + 1)
+
+        token_embeddings = self.textual_encoder(input_ids, attention_mask)[0]
         
         attention_masks = inputs["attention_mask"][...,None].expand(token_embeddings.size()).float()
         sum_embeddings = torch.sum(token_embeddings * attention_masks, dim=1)
