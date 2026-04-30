@@ -3120,7 +3120,9 @@ class Mask2FormerTransformerModule(nn.Module):
         if not texts:
             raise ValueError("Expected at least one class name for DocSAM semantic query generation.")
 
-        inputs = self.textual_tokenizer(texts, padding=True, return_tensors="pt").to(device)
+        cpu_device = torch.device("cpu")
+        self.textual_encoder = self.textual_encoder.to(cpu_device)
+        inputs = self.textual_tokenizer(texts, padding=True, return_tensors="pt").to(cpu_device)
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
 
@@ -3131,7 +3133,7 @@ class Mask2FormerTransformerModule(nn.Module):
             # Keep the textual encoder/tokenizer in sync even when local model files drift.
             self.textual_encoder.resize_token_embeddings(max_token_id + 1)
 
-        token_embeddings = self.textual_encoder(input_ids, attention_mask)[0]
+        token_embeddings = self.textual_encoder(input_ids=input_ids, attention_mask=attention_mask)[0].to(device)
         
         attention_masks = inputs["attention_mask"][...,None].expand(token_embeddings.size()).float()
         sum_embeddings = torch.sum(token_embeddings * attention_masks, dim=1)
